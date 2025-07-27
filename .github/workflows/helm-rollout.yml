@@ -1,0 +1,60 @@
+name: Rollout App via Helm
+
+on:
+  workflow_call:
+    inputs:
+      release_name:
+        required: true
+        type: string
+
+      helm_chart_path:
+        required: false
+        type: string
+        default: ./helm
+
+      namespace:
+        required: false
+        type: string
+        default: default
+
+      image_tag:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  rollout:
+    runs-on: [cluster, linux]
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Determine tag
+        id: vars
+        run: |
+          if [ -z "${{ inputs.image_tag }}" ]; then
+            echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          else
+            echo "short_sha=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Helm upgrade
+        run: |
+          helm upgrade --install ${{ inputs.release_name }} ${{ inputs.helm_chart_path }} \
+            --namespace ${{ inputs.namespace }} \
+            --set image.tag=${{ steps.vars.outputs.short_sha }}
+
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/${{ inputs.release_name }} \
+            --namespace ${{ inputs.namespace }} \
+            --timeout=180s

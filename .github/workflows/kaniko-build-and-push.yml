@@ -1,0 +1,64 @@
+name: Build and Push with Kaniko
+
+on:
+  workflow_call:
+    inputs:
+      registry_root:
+        required: true
+        type: string
+
+      image_name:
+        required: true
+        type: string
+
+      dockerfile:
+        required: false
+        type: string
+        default: Dockerfile
+
+      context:
+        required: false
+        type: string
+        default: app
+
+    secrets:
+      REGISTRY_AUTH:
+        required: false  # Optional; include if auth is needed
+
+jobs:
+  build-and-push:
+    runs-on: [cluster, linux]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Extract short SHA
+        id: vars
+        run: echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Print Image Info
+        run: |
+          echo "Building image:"
+          echo "  → Registry: ${{ inputs.registry_root }}"
+          echo "  → Image: ${{ inputs.image_name }}"
+          echo "  → Tag: ${{ steps.vars.outputs.short_sha }}"
+          echo "  → Context: ${{ inputs.context }}"
+          echo "  → Dockerfile: ${{ inputs.dockerfile }}"
+
+      - name: Run Kaniko to build and push image
+        uses: addnab/docker-run-action@v3
+        with:
+          image: gcr.io/kaniko-project/executor:v1.20.0-debug
+          options: >-
+            -v ${{ github.workspace }}/${{ inputs.context }}:/workspace
+            -v ${{ github.workspace }}/.docker:/kaniko/.docker
+          run: |
+            /kaniko/executor \
+              --dockerfile=/workspace/${{ inputs.dockerfile }} \
+              --context=dir:///workspace \
+              --destination=${{ inputs.registry_root }}/${{ inputs.image_name }}:${{ steps.vars.outputs.short_sha }} \
+              --destination=${{ inputs.registry_root }}/${{ inputs.image_name }}:latest \
+              --insecure \
+              --skip-tls-verify \
+              --verbosity=info
